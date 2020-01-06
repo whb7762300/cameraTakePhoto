@@ -3,9 +3,12 @@ package com.jackwang.takepic;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Matrix;
 import android.hardware.Camera;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Message;
 import android.util.Log;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
@@ -13,6 +16,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
 
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import java.io.BufferedOutputStream;
@@ -29,6 +33,14 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private int pic_height = 1080;
     private SurfaceHolder mSurfaceHolder;
     private Camera mCamera;
+
+    private Handler handler = new Handler() {
+        @Override
+        public void handleMessage(@NonNull Message msg) {
+            super.handleMessage(msg);
+
+        }
+    };
 
     private SurfaceHolder.Callback mSurfaceCallBack = new SurfaceHolder.Callback() {
 
@@ -131,7 +143,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         //Camera.Size size = getBestPreviewSize(screenWidth, screenHeight);
         //设置预览相机大小
         params.setPreviewSize(size.width, size.height);
-        params.setPictureSize(size.width, size.height);
+        params.setPictureSize(size.width * 2, size.height * 2);
         Log.e("hehe", "width:" + size.width + ",height:" + size.height);
         //设置聚焦模式
         params.setFocusMode(Camera.Parameters.FOCUS_MODE_CONTINUOUS_PICTURE);
@@ -184,20 +196,55 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     public void onClick(View view) {
         mCamera.takePicture(null, null, new Camera.PictureCallback() {
             @Override
-            public void onPictureTaken(byte[] bytes, Camera camera) {
-                Bitmap mBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
-                File file = new File(Environment.getExternalStorageDirectory().toString() + "/pic.jpg");
-                try {
-                    file.createNewFile();
-                    BufferedOutputStream os = new BufferedOutputStream(new FileOutputStream(file));
-                    mBitmap.compress(Bitmap.CompressFormat.JPEG, 100, os);
-                    os.flush();
-                    os.close();
-                    Toast.makeText(getApplicationContext(), "图像保存成功", Toast.LENGTH_LONG).show();
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
+            public void onPictureTaken(final byte[] bytes, Camera camera) {
+                handler.post(() -> {
+                    Log.e("hehe", "线程:" + Thread.currentThread().getName());
+                    long millis = System.currentTimeMillis();
+                    Bitmap mBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.length);
+                    if (MainActivity.this.getResources().getConfiguration().orientation != Configuration.ORIENTATION_LANDSCAPE) {
+                        mBitmap = rotateBitmap(mBitmap, 90);
+                    }
+                    File file = new File(Environment.getExternalStorageDirectory().toString() + "/pic.jpg");
+                    try {
+                        file.createNewFile();
+                        BufferedOutputStream os = new BufferedOutputStream(new FileOutputStream(file));
+                        mBitmap.compress(Bitmap.CompressFormat.JPEG, 100, os);
+                        os.flush();
+                        os.close();
+                        Log.e("hehe", "耗时:" + (System.currentTimeMillis() - millis));
+                        runOnUiThread(() -> {
+                            Toast.makeText(getApplicationContext(), "图像保存成功", Toast.LENGTH_LONG).show();
+                            initCamera();
+                        });
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                });
             }
         });
+    }
+
+    /**
+     * 选择变换
+     *
+     * @param origin 原图
+     * @param alpha  旋转角度，可正可负
+     * @return 旋转后的图片
+     */
+    private Bitmap rotateBitmap(Bitmap origin, float alpha) {
+        if (origin == null) {
+            return null;
+        }
+        int width = origin.getWidth();
+        int height = origin.getHeight();
+        Matrix matrix = new Matrix();
+        matrix.setRotate(alpha);
+        // 围绕原地进行旋转
+        Bitmap newBM = Bitmap.createBitmap(origin, 0, 0, width, height, matrix, false);
+        if (newBM.equals(origin)) {
+            return newBM;
+        }
+        origin.recycle();
+        return newBM;
     }
 }
